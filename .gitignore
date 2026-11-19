@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# 本地改动前的备份（不进仓库）
+_bak-*
+static/_bak-*
+
+# 运行期产物
+history.json
+*.log
+
+# 打包产物
+dist/
+build/
+*.spec
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini

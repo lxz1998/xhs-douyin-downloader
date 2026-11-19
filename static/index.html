@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>去水印</title>
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#fff; --line:#e6e9ee; --text:#1a1d21;
+    --muted:#6b7280; --brand:#2563eb; --brand-d:#1d4ed8; --ok:#0f766e; --warn:#b45309;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    padding:0 0 60px}
+  .wrap{max-width:820px;margin:0 auto;padding:0 16px}
+  header{padding:34px 0 18px}
+  h1{margin:0 0 6px;font-size:24px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  textarea{width:100%;min-height:92px;resize:vertical;border:1px solid var(--line);
+    border-radius:10px;padding:12px;font:inherit;background:#fbfcfd;outline:none}
+  textarea:focus{border-color:var(--brand);background:#fff}
+  .row{display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap}
+  button{border:0;border-radius:10px;padding:11px 20px;font:inherit;font-weight:600;cursor:pointer}
+  .primary{background:var(--brand);color:#fff}
+  .primary:hover{background:var(--brand-d)}
+  .primary:disabled{opacity:.55;cursor:default}
+  .ghost{background:#eef2f7;color:#243044}
+  .ghost:hover{background:#e3e9f2}
+  .hint{color:var(--muted);font-size:12px}
+  .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;
+    padding:10px 12px;font-size:13px;margin-top:10px;display:none}
+  .res{display:none}
+  .title{font-weight:600;font-size:16px;margin:0 0 2px;word-break:break-word}
+  .meta{color:var(--muted);font-size:13px;margin-bottom:12px}
+  video{width:100%;max-height:440px;border-radius:10px;background:#000;display:block}
+  .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .img{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fafbfc}
+  .img img{width:100%;display:block;aspect-ratio:3/4;object-fit:cover}
+  .img .dl{position:absolute;right:8px;bottom:8px;background:rgba(17,24,39,.78);color:#fff;
+    padding:5px 10px;border-radius:8px;font-size:12px;text-decoration:none;backdrop-filter:blur(4px)}
+  .img .dl:hover{background:rgba(17,24,39,.92)}
+  .bar{display:flex;gap:10px;align-items:center;justify-content:space-between;
+    margin:0 0 12px;flex-wrap:wrap}
+  .count{color:var(--muted);font-size:13px}
+  .spin{display:none;align-items:center;gap:8px;color:var(--muted);font-size:13px;margin-top:10px}
+  .spin.on{display:flex}
+  .dot{width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:var(--brand);
+    border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;
+    background:#eef2ff;color:#3730a3;margin-right:6px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:24px 0 0;line-height:1.8}
+
+  #btnQuit{margin-top:14px;background:none;border:1px solid var(--line);color:var(--muted);
+    font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer}
+  #btnQuit:hover{border-color:#c7cdd6;color:#374151}
+  @media (max-width:520px){
+    header{padding:22px 0 14px}
+    h1{font-size:20px}
+    .imgs{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+  }
+  /* 图片查看器 */
+  .lb{position:fixed;inset:0;z-index:100;display:none;overflow:hidden;
+    background:rgba(250,251,253,.86);
+    -webkit-backdrop-filter:blur(22px) saturate(1.15);backdrop-filter:blur(22px) saturate(1.15)}
+  .lb.on{display:block}
+  .lb-stage{position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:none}
+  .lb-stage.dragging{cursor:grabbing}
+  .lb-stage img{position:absolute;left:0;top:0;max-width:none;max-height:none;
+    transform-origin:0 0;user-select:none;-webkit-user-drag:none;will-change:transform;
+    box-shadow:0 10px 40px rgba(17,24,39,.18),0 0 0 1px rgba(17,24,39,.06)}
+  .lb-close,.lb-nav{position:absolute;z-index:2;display:flex;align-items:center;justify-content:center;
+    width:44px;height:44px;border-radius:50%;background:rgba(17,24,39,.055);color:#1f2329;
+    cursor:pointer;user-select:none;font-size:22px;line-height:1}
+  .lb-close:hover,.lb-nav:hover{background:rgba(17,24,39,.12)}
+  .lb-close{top:16px;right:20px}
+  .lb-prev{left:14px;top:50%;transform:translateY(-50%)}
+  .lb-next{right:14px;top:50%;transform:translateY(-50%)}
+  .lb-bar{position:absolute;z-index:2;left:50%;bottom:20px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:4px;padding:7px 12px;border-radius:999px;
+    background:rgba(255,255,255,.95);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    box-shadow:0 8px 28px rgba(17,24,39,.13);border:1px solid rgba(17,24,39,.06)}
+  .lb-btn{width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:#1f2329;
+    font:inherit;font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;text-decoration:none;padding:0}
+  .lb-btn:hover{background:rgba(17,24,39,.07)}
+  .lb-count,.lb-zoom{color:#4b5563;font-size:13px;min-width:54px;text-align:center;
+    font-variant-numeric:tabular-nums}
+  .lb-sep{width:1px;height:18px;background:rgba(17,24,39,.12);margin:0 5px}
+  /* 多结果卡片 + 历史列表（2026-11-19） */
+  #results .card{margin-bottom:14px}
+  #results .card:last-child{margin-bottom:14px}
+  .hitem{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer}
+  .hitem:last-child{border-bottom:0}
+  .hitem:hover{background:#fafbfc}
+  .hplat{font-size:11px;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#2563eb;flex:0 0 auto}
+  .hplat.xhs{background:#fff1f2;color:#e11d48}
+  .htxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .hmeta{color:var(--muted);font-size:12px;flex:0 0 auto}
+  .hdel{color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:4px 7px;border:0;background:transparent;border-radius:6px}
+  .hdel:hover{background:#f1f3f6;color:#b91c1c}
+  .prog{color:var(--muted);font-size:13px;margin-top:10px;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>去水印下载</h1>
+    <div class="sub">抖音 / 小红书 · 视频和图集直接存，不用看广告</div>
+  </header>
+
+  <div class="card">
+    <textarea id="q" placeholder="把分享链接或整段分享文案粘进来，例如：
+7.43 复制打开抖音，看看【xxx的作品】https://v.douyin.com/xxxxx/
+
+28 小xx发布了一篇小红书笔记，快来看吧！ http://xhslink.com/o/xxxxx"></textarea>
+    <div class="row">
+      <button class="ghost" id="btnPaste">粘贴</button>
+      <button class="primary" id="btnGo">解析</button>
+      <button class="ghost" id="btnClear">清空</button>
+      <span class="hint">自动抠链接 · 一次最多 8 条</span>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="spin" id="spin"><div class="dot"></div><span>正在解析…</span></div>
+    <div class="prog" id="prog"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="card" id="histCard" style="display:none">
+    <div class="bar" style="margin-bottom:4px">
+      <div class="title" style="font-size:15px;margin:0">最近解析</div>
+      <button class="ghost" id="btnHistClear" title="清空全部历史">清空</button>
+    </div>
+    <div id="histList"></div>
+  </div>
+
+  <footer>
+    仅用于下载自己发布或已获授权的内容 · 请遵守平台条款与著作权法<br>
+    解析结果里的直链有时效，拿到就尽快存
+    <div><button id="btnQuit">停止服务</button></div>
+  </footer>
+</div>
+
+<div class="lb" id="lb">
+  <div class="lb-stage" id="lbStage"><img id="lbImg" alt="" draggable="false"></div>
+  <div class="lb-close" id="lbClose" title="关闭（Esc）">×</div>
+  <div class="lb-nav lb-prev" id="lbPrev" title="上一张（←）">‹</div>
+  <div class="lb-nav lb-next" id="lbNext" title="下一张（→）">›</div>
+  <div class="lb-bar">
+    <button class="lb-btn" id="lbPrev2" title="上一张">‹</button>
+    <span class="lb-count" id="lbCount">1 / 1</span>
+    <button class="lb-btn" id="lbNext2" title="下一张">›</button>
+    <span class="lb-sep"></span>
+    <button class="lb-btn" id="lbZoomOut" title="缩小">−</button>
+    <span class="lb-zoom" id="lbZoom">100%</span>
+    <button class="lb-btn" id="lbZoomIn" title="放大">+</button>
+    <button class="lb-btn" id="lbFit" title="适应窗口">⛶</button>
+    <a class="lb-btn" id="lbDl" title="下载这张">⤓</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  // 云端发布时，平台要求每个请求都带 sharecode（本地跑没有这个参数）
+  function withSC(path){
+    var sc=new URLSearchParams(location.search).get('sharecode');
+    if(!sc) return path;
+    return path+(path.indexOf('?')>=0?'&':'?')+'sharecode='+encodeURIComponent(sc);
+  }
+
+  function showErr(msg){ var e=$('err'); e.textContent=msg; e.style.display='block'; }
+  function clearErr(){ $('err').style.display='none'; }
+  function busy(on){ $('btnGo').disabled=on; $('spin').classList.toggle('on',on); }
+
+  var MAX_BATCH=8;
+  var URL_RE=/https?:\/\/[^\s\u4e00-\u9fff，。、；：！？（）()【】\[\]<>"']+/g;
+  function extractUrls(text){
+    var seen={}, out=[], m;
+    URL_RE.lastIndex=0;
+    while((m=URL_RE.exec(text||''))!==null){
+      var u=m[0].replace(/[，。、；：]+$/,'');
+      if(!seen[u]){ seen[u]=1; out.push(u); }
+    }
+    return out;
+  }
+  function prog(txt){ var p=$('prog'); if(!p) return; p.textContent=txt||''; p.style.display=txt?'block':'none'; }
+
+  async function parse(){
+    clearErr(); prog('');
+    var text=$('q').value.trim();
+    if(!text){ showErr('先粘一条链接'); return; }
+    var urls=extractUrls(text);
+    if(!urls.length){ showErr('没找到链接：把整段分享文案粘进来就行'); return; }
+    if(urls.length>MAX_BATCH){ showErr('一次最多 '+MAX_BATCH+' 条，现在有 '+urls.length+' 条'); return; }
+    busy(true);
+    $('results').innerHTML='';
+    var okN=0, bad=[];
+    try{
+      for(var i=0;i<urls.length;i++){
+        if(urls.length>1) prog('正在解析 '+(i+1)+' / '+urls.length+'…');
+        try{
+          var r=await fetch(withSC('/api/parse'),{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({text:urls[i]})});
+          var d=await r.json();
+          if(d.ok){ $('results').appendChild(renderCard(d)); okN++; }
+          else bad.push((d.error||'解析失败')+'（'+urls[i].slice(0,36)+'）');
+        }catch(e){ bad.push('网络出错：'+e.message); }
+      }
+    } finally { prog(''); busy(false); }
+    if(bad.length) showErr(bad.length+' 条没成功：'+bad.slice(0,3).join('；'));
+    if(okN) loadHistory();
+  }
+
+  function dlUrl(u,name){
+    return withSC('/api/dl?u='+encodeURIComponent(u)+'&name='+encodeURIComponent(name));
+  }
+
+  // 一条结果 = 一张卡片。批量解析时按顺序 append，各自独立下载/打包。
+  function renderCard(d){
+    var card=document.createElement('div'); card.className='card';
+    var base=(d.title||'作品').slice(0,40);
+
+    var head=document.createElement('div'); head.className='bar';
+    var info=document.createElement('div');
+    var t=document.createElement('div'); t.className='title'; t.textContent=d.title||'（无标题）';
+    var m=document.createElement('div'); m.className='meta';
+    m.innerHTML='<span class="tag">'+(d.platform==='douyin'?'抖音':'小红书')+'</span>'+
+      (d.author?('作者：'+esc(d.author)):'')+
+      (d.kind==='images'?('　共 '+d.images.length+' 张'):'');
+    info.appendChild(t); info.appendChild(m);
+    var acts=document.createElement('div');
+    head.appendChild(info); head.appendChild(acts);
+    card.appendChild(head);
+
+    if(d.kind==='video'&&d.video_url){
+      var v=document.createElement('video');
+      v.controls=true; v.preload='metadata';
+      // 预览走 inline（不带 name），下载才走 attachment；同一地址带 name 会被浏览器当下载处理
+      v.src=dlUrl(d.video_url, '');
+      v.style.width='100%';
+      card.appendChild(v);
+      var a=document.createElement('a'); a.className='ghost';
+      a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:inline-block');
+      a.href=dlUrl(d.video_url, base+'.mp4'); a.textContent='下载视频';
+      acts.appendChild(a);
+    }
+
+    if(d.images&&d.images.length){
+      var bar=document.createElement('div'); bar.className='bar';
+      var cnt=document.createElement('div'); cnt.className='count'; cnt.textContent='图片 '+d.images.length+' 张';
+      var zb=document.createElement('button'); zb.className='primary'; zb.textContent='打包下载全部';
+      zb.onclick=function(){ zipAll(d, base, zb); };
+      bar.appendChild(cnt); bar.appendChild(zb);
+      card.appendChild(bar);
+
+      var box=document.createElement('div'); box.className='imgs';
+      d.images.forEach(function(u,i){
+        var cell=document.createElement('div'); cell.className='img';
+        var img=document.createElement('img'); img.loading='lazy'; img.src=dlUrl(u,'');
+        img.style.cursor='zoom-in';
+        img.onclick=function(){ lbOpen(d.images, i, base); };
+        img.onerror=function(){ img.style.opacity='.35'; };
+        var dl=document.createElement('a'); dl.className='dl'; dl.textContent='下载';
+        dl.href=dlUrl(u, base+'_'+(i+1)+'.jpg');
+        cell.appendChild(img); cell.appendChild(dl); box.appendChild(cell);
+      });
+      card.appendChild(box);
+    }
+    return card;
+  }
+
+  // 历史：解析成功后由后端自动记一条，这里只负责显示与重解析。
+  async function loadHistory(){
+    try{
+      var r=await fetch(withSC('/api/history'));
+      var d=await r.json();
+      var items=(d&&d.items)||[];
+      var card=$('histCard'), list=$('histList');
+      if(!items.length){ card.style.display='none'; return; }
+      card.style.display='block';
+      list.innerHTML='';
+      items.slice(0,20).forEach(function(it){
+        var row=document.createElement('div'); row.className='hitem';
+        var pl=document.createElement('span'); pl.className='hplat'+(it.platform==='xhs'?' xhs':'');
+        pl.textContent=it.platform==='douyin'?'抖音':'小红书';
+        var tx=document.createElement('span'); tx.className='htxt';
+        tx.textContent=(it.title||'（无标题）')+(it.kind==='images'?' · '+it.count+' 张':' · 视频');
+        var tm=document.createElement('span'); tm.className='hmeta'; tm.textContent=it.ts||'';
+        var del=document.createElement('button'); del.className='hdel'; del.textContent='×'; del.title='删除这条';
+        del.onclick=function(e){
+          e.stopPropagation();
+          fetch(withSC('/api/history/del'),{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({id:it.id})}).then(function(){ loadHistory(); });
+        };
+        row.appendChild(pl); row.appendChild(tx); row.appendChild(tm); row.appendChild(del);
+        row.title='点击重新解析';
+        row.onclick=function(){
+          if(!it.src_url) return;
+          $('q').value=it.src_url;
+          parse();
+        };
+        list.appendChild(row);
+      });
+    }catch(e){}
+  }
+
+  async function zipAll(d, base, btn){
+    if(!btn) btn=document.createElement('button');       // 兜底：别因为拿不到按钮就整段崩掉
+    var old=btn.textContent;
+    btn.disabled=true; btn.textContent='打包中…';
+    try{
+      var r=await fetch(withSC('/api/zip'),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({urls:d.images,title:base})});
+      if(!r.ok){ var e=await r.json().catch(function(){return{}}); showErr(e.error||'打包失败'); return; }
+      var blob=await r.blob();
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download=base+'.zip';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
+    }catch(e){ showErr('打包出错：'+e.message); }
+    finally{ btn.disabled=false; btn.textContent=old||'打包下载全部'; }
+  }
+
+  function esc(s){ return String(s||'').replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  var quitBtn=document.getElementById('btnQuit');
+  if(quitBtn) quitBtn.onclick=async function(){
+    if(!confirm('停止后要重新双击「去水印」才能再用，确定？')) return;
+    quitBtn.disabled=true; quitBtn.textContent='正在停止…';
+    try{ await fetch('/api/quit',{method:'POST'}); }catch(e){}
+    document.body.innerHTML='<div style="padding:60px 20px;text-align:center;color:#6b7280">'+
+      '服务已停止，可以关掉这个页面了。<br><br>'+
+      '<span style="font-size:13px">下次用：双击桌面的「去水印」</span></div>';
+  };
+
+  var pasteBtn=$('btnPaste');
+  if(pasteBtn) pasteBtn.onclick=async function(){
+    var label=pasteBtn.textContent;
+    pasteBtn.disabled=true; pasteBtn.textContent='读取中…';
+    try{
+      if(!navigator.clipboard||!navigator.clipboard.readText){
+        showErr('这个浏览器不支持读剪贴板，手动 Ctrl+V 吧');
+        return;
+      }
+      var t=await navigator.clipboard.readText();
+      if(!t||!t.trim()){ showErr('剪贴板是空的'); return; }
+      $('q').value=t;
+      clearErr();
+      $('q').focus();
+      $('q').setSelectionRange(t.length,t.length);
+    }catch(e){
+      showErr('读剪贴板被拒绝（'+(e&&e.message||e)+'），可以手动 Ctrl+V');
+    }finally{
+      pasteBtn.disabled=false; pasteBtn.textContent=label;
+    }
+  };
+
+  // ---- 图片查看器：点开 / 滚轮缩放 / 拖拽 / 双击复位 ----
+  var lb={el:null,stage:null,img:null,count:null,zoom:null,dl:null,
+          prev:null,next:null,prev2:null,next2:null,
+          list:[],idx:0,base:'',scale:1,tx:0,ty:0,fit:1,
+          dragging:false,moved:false,sx:0,sy:0,ox:0,oy:0};
+
+  function lbApply(){
+    lb.img.style.transform='translate('+lb.tx+'px,'+lb.ty+'px) scale('+lb.scale+')';
+    lb.zoom.textContent=Math.round(lb.scale*100)+'%';
+  }
+  function lbFit(){
+    var st=lb.stage.getBoundingClientRect();
+    var iw=lb.img.naturalWidth||1, ih=lb.img.naturalHeight||1;
+    var pad=40;
+    var f=Math.min((st.width-pad*2)/iw,(st.height-pad*2)/ih);
+    lb.fit=f>1?1:f;
+    lb.scale=lb.fit;
+    lb.tx=(st.width-iw*lb.scale)/2;
+    lb.ty=(st.height-ih*lb.scale)/2;
+    lbApply();
+  }
+  function lbZoomAt(f,cx,cy){
+    var ns=Math.min(6,Math.max(0.1,lb.scale*f));
+    var k=ns/lb.scale;
+    lb.tx=cx-(cx-lb.tx)*k;
+    lb.ty=cy-(cy-lb.ty)*k;
+    lb.scale=ns;
+    lbApply();
+  }
+  function lbCenterZoom(f){
+    var st=lb.stage.getBoundingClientRect();
+    lbZoomAt(f,st.width/2,st.height/2);
+  }
+  function lbShow(){
+    if(!lb.list.length) return;
+    var u=lb.list[lb.idx];
+    lb.img.style.transform='none';
+    lb.img.style.visibility='hidden';
+    lb.img.onload=function(){ lbFit(); lb.img.style.visibility='visible'; };
+    lb.img.src=dlUrl(u,'');
+    lb.count.textContent=(lb.idx+1)+' / '+lb.list.length;
+    lb.dl.href=dlUrl(u, lb.base+'_'+(lb.idx+1)+'.jpg');
+    var multi=lb.list.length>1;
+    [lb.prev,lb.next,lb.prev2,lb.next2].forEach(function(n){ if(n) n.style.display=multi?'flex':'none'; });
+  }
+  function lbOpen(list,i,base){
+    lb.list=list||[]; lb.idx=i||0; lb.base=base||'作品';
+    lb.el.classList.add('on');
+    lbShow();
+  }
+  function lbMove(d){
+    if(lb.list.length<2) return;
+    lb.idx=(lb.idx+d+lb.list.length)%lb.list.length;
+    lbShow();
+  }
+  function lbClose(){ lb.el.classList.remove('on'); lb.img.removeAttribute('src'); }
+
+  lb.el=$('lb');
+  if(lb.el){
+    lb.stage=$('lbStage'); lb.img=$('lbImg'); lb.count=$('lbCount'); lb.zoom=$('lbZoom');
+    lb.dl=$('lbDl'); lb.prev=$('lbPrev'); lb.next=$('lbNext');
+    lb.prev2=$('lbPrev2'); lb.next2=$('lbNext2');
+
+    $('lbClose').onclick=lbClose;
+    lb.prev.onclick=function(e){ e.stopPropagation(); lbMove(-1); };
+    lb.next.onclick=function(e){ e.stopPropagation(); lbMove(1); };
+    lb.prev2.onclick=function(){ lbMove(-1); };
+    lb.next2.onclick=function(){ lbMove(1); };
+    $('lbZoomIn').onclick=function(){ lbCenterZoom(1.25); };
+    $('lbZoomOut').onclick=function(){ lbCenterZoom(1/1.25); };
+    $('lbFit').onclick=lbFit;
+
+    lb.stage.addEventListener('wheel',function(e){
+      e.preventDefault();
+      var r=lb.stage.getBoundingClientRect();
+      lbZoomAt(e.deltaY<0?1.15:1/1.15, e.clientX-r.left, e.clientY-r.top);
+    },{passive:false});
+
+    lb.stage.addEventListener('mousedown',function(e){
+      if(e.button!==0) return;
+      lb.dragging=true; lb.moved=false; lb.stage.classList.add('dragging');
+      lb.sx=e.clientX; lb.sy=e.clientY; lb.ox=lb.tx; lb.oy=lb.ty;
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove',function(e){
+      if(!lb.dragging) return;
+      var dx=e.clientX-lb.sx, dy=e.clientY-lb.sy;
+      if(Math.abs(dx)>4||Math.abs(dy)>4) lb.moved=true;
+      lb.tx=lb.ox+dx; lb.ty=lb.oy+dy;
+      lbApply();
+    });
+    window.addEventListener('mouseup',function(){
+      if(!lb.dragging) return;
+      lb.dragging=false; lb.stage.classList.remove('dragging');
+    });
+
+    lb.stage.addEventListener('dblclick',function(){
+      if(lb.scale<=lb.fit+0.02){
+        var r=lb.stage.getBoundingClientRect();
+        var iw=lb.img.naturalWidth||1, ih=lb.img.naturalHeight||1;
+        lb.scale=1; lb.tx=(r.width-iw)/2; lb.ty=(r.height-ih)/2;
+        lbApply();
+      } else { lbFit(); }
+    });
+
+    lb.el.onclick=function(e){
+      if(lb.moved) return;
+      if(e.target===lb.el||e.target===lb.stage) lbClose();
+    };
+
+    document.addEventListener('keydown',function(e){
+      if(!lb.el.classList.contains('on')) return;
+      if(e.key==='Escape') lbClose();
+      else if(e.key==='ArrowLeft') lbMove(-1);
+      else if(e.key==='ArrowRight') lbMove(1);
+      else if(e.key==='+'||e.key==='=') lbCenterZoom(1.25);
+      else if(e.key==='-') lbCenterZoom(1/1.25);
+      else if(e.key==='0') lbFit();
+    });
+
+    window.addEventListener('resize',function(){
+      if(lb.el.classList.contains('on')&&lb.img.naturalWidth) lbFit();
+    });
+  }
+
+  $('btnGo').onclick=parse;
+  $('btnClear').onclick=function(){ $('q').value=''; clearErr(); prog(''); $('results').innerHTML=''; };
+  $('btnHistClear').onclick=function(){
+    if(!confirm('清空全部解析历史？')) return;
+    fetch(withSC('/api/history/clear'),{method:'POST'}).then(function(){ loadHistory(); });
+  };
+  $('q').addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey)&&e.key==='Enter') parse();
+  });
+  loadHistory();
+})();
+</script>
+</body>
+</html>
