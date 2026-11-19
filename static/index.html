@@ -223,6 +223,17 @@
     return withSC('/api/dl?u='+encodeURIComponent(u)+'&name='+encodeURIComponent(name));
   }
 
+  // 浏览器能不能解 HEVC（H.265）。能解就用无水印的原始档预览，不能就用带水印的兼容档。
+  var _hevc=null;
+  function canPlayHevc(){
+    if(_hevc!==null) return _hevc;
+    try{
+      var v=document.createElement('video');
+      _hevc=!!(v.canPlayType('video/mp4; codecs="hvc1"') || v.canPlayType('video/mp4; codecs="hev1"'));
+    }catch(e){ _hevc=false; }
+    return _hevc;
+  }
+
   // 一条结果 = 一张卡片。批量解析时按顺序 append，各自独立下载/打包。
   function renderCard(d){
     var card=document.createElement('div'); card.className='card';
@@ -241,21 +252,31 @@
     card.appendChild(head);
 
     if(d.kind==='video'&&d.video_url){
+      var orig=d.video_url_orig||d.video_url;
+      var hasClean=orig!==d.video_url;              // 预览用的兼容档 vs 原始档，两份不同
+      // 兼容档是平台转码的，画面上带小红书水印；原始档是干净的，但常常是 H.265。
+      // 浏览器能解 HEVC 就直接用原始档预览，解不了才退回兼容档。
+      var useOrig=hasClean&&canPlayHevc();
       var v=document.createElement('video');
       v.controls=true; v.preload='metadata';
-      // 预览走 inline（不带 name），下载才走 attachment；同一地址带 name 会被浏览器当下载处理
-      v.src=dlUrl(d.video_url, '');
+      v.src=dlUrl(useOrig?orig:d.video_url, '');    // 预览走 inline
       card.appendChild(v);
-      var orig=d.video_url_orig||d.video_url;
       var a=document.createElement('a'); a.className='ghost';
       a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:inline-block');
-      a.href=dlUrl(orig, base+'.mp4'); a.textContent=(orig!==d.video_url)?'下载原画（文件更大）':'下载视频';
+      a.href=dlUrl(orig, base+'.mp4');
+      a.textContent=hasClean?'下载无水印原画':'下载视频';
       acts.appendChild(a);
-      if(d.video_codec==='h265'){
+      var tipTxt='';
+      if(!hasClean&&d.video_codec==='h265'){
+        tipTxt='这条平台只给了 H.265 编码，浏览器可能放不出来。下载后用系统播放器打开即可。';
+      }else if(hasClean&&!useOrig){
+        tipTxt='预览用的是平台转码版，画面带水印；点「下载无水印原画」拿到的是干净的那份。';
+      }
+      if(tipTxt){
         var tip=document.createElement('div'); tip.className='meta';
-        tip.style.cssText='color:#b45309;margin-top:8px';
-        tip.textContent='这条平台只给了 H.265 编码，浏览器可能放不出来（黑屏）。下载后用系统播放器打开即可。';
-        card.appendChild(tip);
+        tip.style.cssText='color:#b45309;margin:0 0 10px';
+        tip.textContent=tipTxt;
+        card.insertBefore(tip, v);        // 放在视频上方：视频太高，写在下面用户根本滚不到
       }
     }
 
