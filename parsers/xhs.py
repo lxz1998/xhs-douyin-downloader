@@ -94,23 +94,40 @@ def _find_note(state, note_id):
     return None
 
 
-def _best_video(note):
-    """优先取原始视频 key，兜底取码率最高的一档。"""
+def _video_variants(note):
+    """返回 (preview_url, orig_url, codec)。
+
+    预览必须优先 H.264：Chrome 不解 HEVC，而小红书不少视频的 originVideoKey
+    就是 H.265，表现为「时长读得到、宽高是 0、画面全黑」（2026-11-19 实测）。
+    原始档单独返回，供「下载原画」用——画质更高但可能只有 H.265。
+    """
     video = note.get("video") or {}
-    key = ((video.get("consumer") or {}).get("originVideoKey") or "").strip()
-    if key:
-        return "https://sns-video-bd.xhscdn.com/" + key
+    origin = ((video.get("consumer") or {}).get("originVideoKey") or "").strip()
+    origin_url = ("https://sns-video-bd.xhscdn.com/" + origin) if origin else ""
+
     stream = ((video.get("media") or {}).get("stream") or {})
-    best, best_score = "", -1
-    for codec in ("h264", "h265", "av1"):
+
+    def best(codec):
+        url, score = "", -1
         for item in (stream.get(codec) or []):
-            url = item.get("masterUrl") or ((item.get("backupUrls") or [""])[0])
-            if not url:
+            u = item.get("masterUrl") or ((item.get("backupUrls") or [""])[0])
+            if not u:
                 continue
-            score = (item.get("width") or 0) * (item.get("height") or 0)
-            if score > best_score:
-                best, best_score = url, score
-    return best
+            s = (item.get("width") or 0) * (item.get("height") or 0)
+            if s > score:
+                url, score = u, s
+        return url
+
+    h264, h265 = best("h264"), best("h265")
+    preview = h264 or origin_url or h265
+    orig = origin_url or h265 or h264
+    codec = "h264" if h264 else (("h265" if (origin_url or h265) else ""))
+    return preview, orig, codec
+
+
+def _best_video(note):
+    """旧名保留：只要一个地址时给预览地址。"""
+    return _video_variants(note)[0]
 
 
 def parse(share_text):
@@ -146,9 +163,9 @@ def parse(share_text):
         if cands:
             images.append(cands[0])
 
-    video_url = ""
+    video_url, video_url_orig, video_codec = "", "", ""
     if (note.get("type") or "") == "video" or note.get("video"):
-        video_url = _best_video(note)
+        video_url, video_url_orig, video_codec = _video_variants(note)
 
     # 图文笔记里也可能混着 live photo（动图），先按普通图处理，不额外拉视频
     if not images and not video_url:
@@ -160,6 +177,8 @@ def parse(share_text):
         "title": title,
         "author": author,
         "video_url": video_url,
+        "video_url_orig": video_url_orig,
+        "video_codec": video_codec,
         "images": images,
         "cover": images[0] if images else "",
         "raw_id": note_id,

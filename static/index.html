@@ -37,7 +37,8 @@
   .res{display:none}
   .title{font-weight:600;font-size:16px;margin:0 0 2px;word-break:break-word}
   .meta{color:var(--muted);font-size:13px;margin-bottom:12px}
-  video{width:100%;max-height:440px;border-radius:10px;background:#000;display:block}
+  /* 竖屏视频别撑满宽度：width:auto + max-height 让元素尺寸跟着画面比例走，两侧才不会留大片黑边 */
+  video{width:auto;max-width:100%;max-height:min(70vh,600px);border-radius:10px;background:#000;display:block;margin:0 auto}
   .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .img{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fafbfc}
   .img img{width:100%;display:block;aspect-ratio:3/4;object-fit:cover}
@@ -244,12 +245,18 @@
       v.controls=true; v.preload='metadata';
       // 预览走 inline（不带 name），下载才走 attachment；同一地址带 name 会被浏览器当下载处理
       v.src=dlUrl(d.video_url, '');
-      v.style.width='100%';
       card.appendChild(v);
+      var orig=d.video_url_orig||d.video_url;
       var a=document.createElement('a'); a.className='ghost';
       a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:inline-block');
-      a.href=dlUrl(d.video_url, base+'.mp4'); a.textContent='下载视频';
+      a.href=dlUrl(orig, base+'.mp4'); a.textContent=(orig!==d.video_url)?'下载原画（文件更大）':'下载视频';
       acts.appendChild(a);
+      if(d.video_codec==='h265'){
+        var tip=document.createElement('div'); tip.className='meta';
+        tip.style.cssText='color:#b45309;margin-top:8px';
+        tip.textContent='这条平台只给了 H.265 编码，浏览器可能放不出来（黑屏）。下载后用系统播放器打开即可。';
+        card.appendChild(tip);
+      }
     }
 
     if(d.images&&d.images.length){
