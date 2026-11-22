@@ -21,6 +21,11 @@
   h1{margin:0 0 6px;font-size:24px;letter-spacing:-.3px}
   .sub{color:var(--muted);font-size:13px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  /* 视频的档位选择 + 下载按钮：固定竖排两行、等宽。
+     2026-11-22：放普通 div 里靠 inline 排版，长文案会把按钮挤到下一行，
+     短文案又并排 —— 同一个卡片在两个档位之间跳动。 */
+  .vops{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-width:560px}
+  .vops select,.vops a{width:100%;box-sizing:border-box;text-align:center}
   textarea{width:100%;min-height:92px;resize:vertical;border:1px solid var(--line);
     border-radius:10px;padding:12px;font:inherit;background:#fbfcfd;outline:none}
   textarea:focus{border-color:var(--brand);background:#fff}
@@ -288,8 +293,7 @@
       (d.author?('作者：'+esc(d.author)):'')+
       (d.kind==='images'?('　共 '+d.images.length+' 张'):'');
     info.appendChild(t); info.appendChild(m);
-    var acts=document.createElement('div');
-    head.appendChild(info); head.appendChild(acts);
+    head.appendChild(info);
     card.appendChild(head);
 
     if(d.kind==='video'&&d.video_url){
@@ -306,8 +310,7 @@
       var previewSrc=(canHevc&&h265v)?h265v.url:(d.video_url||orig);
       var v=document.createElement('video');
       v.controls=true; v.preload='metadata';
-      v.src=dlUrl(previewSrc, '');                  // 预览走 inline
-      card.appendChild(v);
+      v.src=dlUrl(previewSrc, '');                  // 预览走 inline（末尾统一 append，保证顺序）
       var tip=document.createElement('div'); tip.className='meta';
       tip.style.cssText='color:#b45309;margin:0 0 10px';   // 警示色：这里要说的是「预览和下载不一样」，灰色会被忽略
       var tipOf=function(){
@@ -319,14 +322,16 @@
       };
       tip.textContent=tipOf();
 
+      var ops=document.createElement('div'); ops.className='vops';
+      card.appendChild(ops);
       var a=document.createElement('a'); a.className='ghost';
-      a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:inline-block');
+      a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:block');
       a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
       a.textContent=cur?('下载 · '+cur.label):(hasClean?'下载无水印原画':'下载视频');
 
       if(vs.length>1){
         var sel=document.createElement('select');
-        sel.setAttribute('style','margin-right:8px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;color:#111;font-size:14px;max-width:min(380px,100%)');
+        sel.setAttribute('style','padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;color:#111;font-size:14px');
         vs.forEach(function(x,i){
           var o=document.createElement('option'); o.value=String(i); o.textContent=x.label;
           sel.appendChild(o);
@@ -338,12 +343,13 @@
           a.textContent=cur?('下载 · '+cur.label):'下载视频';
           tip.textContent=tipOf();
         };
-        acts.appendChild(sel);
+        ops.appendChild(sel);
       }
-      acts.appendChild(a);
+      ops.appendChild(a);
       if(tip.textContent){
-        card.insertBefore(tip, v);        // 放在视频上方：视频太高，写在下面用户根本滚不到
+        card.appendChild(tip);            // 顺序固定：标题 → 档位/按钮 → 提示 → 视频
       }
+      card.appendChild(v);
     }
 
     if(d.images&&d.images.length){
