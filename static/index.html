@@ -21,11 +21,27 @@
   h1{margin:0 0 6px;font-size:24px;letter-spacing:-.3px}
   .sub{color:var(--muted);font-size:13px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
-  /* 视频的档位选择 + 下载按钮：固定竖排两行、等宽。
-     2026-11-22：放普通 div 里靠 inline 排版，长文案会把按钮挤到下一行，
-     短文案又并排 —— 同一个卡片在两个档位之间跳动。 */
-  .vops{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;max-width:560px}
-  .vops select,.vops a{width:100%;box-sizing:border-box;text-align:center}
+  /* 视频的档位选择 + 下载按钮：一行，下拉占满剩余、按钮固定宽度。
+     2026-11-22：不用原生 <select>——它的选项列表是系统渲染的蓝色高亮，改不掉，
+     和页面风格打架。改成自绘下拉（.vsel），按钮文案固定「下载」，档位信息只在选项里显示。 */
+  .vops{display:flex;align-items:stretch;gap:8px;margin:0 0 10px;max-width:560px}
+  .vsel{position:relative;flex:1;min-width:0}
+  .vsel-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#111;
+    font-size:14px;font-family:inherit;cursor:pointer;text-align:left}
+  .vsel-btn:hover{border-color:#cbd5e1}
+  .vsel-btn .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vsel-btn .arw{flex:0 0 auto;color:#94a3b8;font-size:11px;line-height:1}
+  .vsel-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;display:none;
+    background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px;
+    box-shadow:0 8px 24px rgba(15,23,42,.10);max-height:220px;overflow:auto}
+  .vsel.open .vsel-menu{display:block}
+  .vsel-opt{padding:8px 10px;border-radius:7px;font-size:13.5px;color:#334155;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vsel-opt:hover{background:#f1f5f9}
+  .vsel-opt.on{background:#eef2ff;color:#1e3a8a;font-weight:600}
+  .vops .dlbtn{flex:0 0 auto;min-width:88px;display:flex;align-items:center;justify-content:center;
+    padding:0 20px;text-decoration:none;box-sizing:border-box}
   textarea{width:100%;min-height:92px;resize:vertical;border:1px solid var(--line);
     border-radius:10px;padding:12px;font:inherit;background:#fbfcfd;outline:none}
   textarea:focus{border-color:var(--brand);background:#fff}
@@ -280,6 +296,39 @@
     return _hevc;
   }
 
+  // 自绘下拉。为什么不用原生 <select>：它的选项列表由系统渲染（Windows 上是蓝色高亮条），
+  // CSS 改不了，和页面风格对不上。这里用 button + 绝对定位菜单，样式完全跟页面一致。
+  function buildVariantPicker(labels, startIdx, onPick){
+    var box=document.createElement('div'); box.className='vsel';
+    var btn=document.createElement('button'); btn.type='button'; btn.className='vsel-btn';
+    var lab=document.createElement('span'); lab.className='lab';
+    var arw=document.createElement('span'); arw.className='arw'; arw.textContent='▾';
+    btn.appendChild(lab); btn.appendChild(arw);
+    var menu=document.createElement('div'); menu.className='vsel-menu';
+    var cur=startIdx;
+
+    function sync(){
+      lab.textContent=labels[cur];
+      btn.title=labels[cur];
+      Array.prototype.forEach.call(menu.children, function(el,i){
+        el.className='vsel-opt'+(i===cur?' on':'');
+      });
+    }
+    labels.forEach(function(text,i){
+      var o=document.createElement('div'); o.className='vsel-opt'; o.textContent=text; o.title=text;
+      o.onclick=function(ev){
+        ev.stopPropagation();
+        cur=i; sync(); box.classList.remove('open'); onPick(i);
+      };
+      menu.appendChild(o);
+    });
+    btn.onclick=function(ev){ ev.stopPropagation(); box.classList.toggle('open'); };
+    document.addEventListener('click', function(){ box.classList.remove('open'); });
+    box.appendChild(btn); box.appendChild(menu);
+    sync();
+    return box;
+  }
+
   // 一条结果 = 一张卡片。批量解析时按顺序 append，各自独立下载/打包。
   function renderCard(d){
     var card=document.createElement('div'); card.className='card';
@@ -324,26 +373,22 @@
 
       var ops=document.createElement('div'); ops.className='vops';
       card.appendChild(ops);
-      var a=document.createElement('a'); a.className='ghost';
-      a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:block');
+      var a=document.createElement('a'); a.className='ghost dlbtn';
       a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
-      a.textContent=cur?('下载 · '+cur.label):(hasClean?'下载无水印原画':'下载视频');
+      a.textContent='下载';                         // 档位信息只在下拉里显示，按钮不重复
+      a.title=cur?cur.label:'';
 
       if(vs.length>1){
-        var sel=document.createElement('select');
-        sel.setAttribute('style','padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;color:#111;font-size:14px');
-        vs.forEach(function(x,i){
-          var o=document.createElement('option'); o.value=String(i); o.textContent=x.label;
-          sel.appendChild(o);
-        });
-        sel.value=String(vs.indexOf(cur));
-        sel.onchange=function(){
-          cur=vs[+sel.value]||null;
-          a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
-          a.textContent=cur?('下载 · '+cur.label):'下载视频';
-          tip.textContent=tipOf();
-        };
-        ops.appendChild(sel);
+        ops.appendChild(buildVariantPicker(
+          vs.map(function(x){return x.label;}),
+          vs.indexOf(cur),
+          function(i){
+            cur=vs[i]||null;
+            a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
+            a.title=cur?cur.label:'';
+            tip.textContent=tipOf();
+          }
+        ));
       }
       ops.appendChild(a);
       if(tip.textContent){
