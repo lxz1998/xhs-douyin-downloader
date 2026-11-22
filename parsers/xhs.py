@@ -147,7 +147,7 @@ def _video_variants(note):
 
     variants, seen = [], set()
 
-    def add(vid, url, c, meta, w=0, h=0, rec=False, label="", size=0):
+    def add(vid, url, c, meta, w=0, h=0, rec=False, label="", size=0, parts=None):
         if not url or url in seen:
             return
         seen.add(url)
@@ -157,6 +157,7 @@ def _video_variants(note):
             "height": int(h or (meta or {}).get("height") or 0),
             "size": int(size or (meta or {}).get("size") or 0),
             "label": label, "recommended": rec,
+            "parts": parts or [],          # 分列渲染用：类型 / 分辨率 / 体积 / 水印
         })
 
     if origin_url:
@@ -167,21 +168,25 @@ def _video_variants(note):
             parts.append("%d×%d" % (ow, oh))
         if osize:
             parts.append("%.1f MB" % (osize / 1048576.0))
+        parts.append("无水印")
         # 没有 H.265 时原画就是唯一选择，标成默认
         add("orig", origin_url, "orig", {}, w=ow, h=oh, rec=not h265, size=osize,
-            label=" · ".join(parts) + "（无水印）")
+            label=" · ".join(parts), parts=parts)
 
     # 只发布 H.265 作为转码档：体积只有原画的 1/11 且实测无水印；
     # H.264 带平台水印，**不发布**，仅由前端在浏览器不支持 HEVC 时充当预览兜底。
     add("hd-h265", h265, "h265", m265, rec=True)
 
+    # label 统一成四段：类型 · 分辨率 · 体积 · 水印，并同时给出 parts。
+    # 前端按 parts 分列渲染（定宽），这样两个档位的「·」和每一段都在同一条竖线上。
+    # 不要再写「体积小」这类主观描述——后面的 MB 数已经说明了。
     for v in variants:
-        if v["label"]:
+        if v["parts"]:
             continue
         res = ("%d×%d" % (v["width"], v["height"])) if (v["width"] and v["height"]) else ""
         mb = ("%.1f MB" % (v["size"] / 1048576.0)) if v["size"] else ""
-        tag = "高清 H.265（无水印·体积小）"
-        v["label"] = " · ".join([x for x in (tag, res, mb) if x])
+        v["parts"] = [x for x in ("转码", res, mb, "无水印") if x]
+        v["label"] = " · ".join(v["parts"])
 
     return preview, orig, codec, variants
 

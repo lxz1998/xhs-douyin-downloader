@@ -30,14 +30,20 @@
     padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#111;
     font-size:14px;font-family:inherit;cursor:pointer;text-align:left}
   .vsel-btn:hover{border-color:#cbd5e1}
-  .vsel-btn .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vsel-btn .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* 档位信息分列：类型 / 分辨率 / 体积 / 水印，列宽固定，两个档位的「·」落在同一条竖线上。
+     分隔符用绝对定位的伪元素，不占列宽，否则定宽列里的文字会被挤。 */
+  .vline{display:grid;grid-template-columns:52px 92px 84px auto;align-items:baseline}
+  .vline span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .vline span+span{position:relative;padding-left:14px}
+  .vline span+span::before{content:"·";position:absolute;left:2px;color:#cbd5e1;font-weight:400}
   .vsel-btn .arw{flex:0 0 auto;color:#94a3b8;font-size:11px;line-height:1}
   .vsel-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;display:none;
     background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px;
     box-shadow:0 8px 24px rgba(15,23,42,.10);max-height:220px;overflow:auto}
   .vsel.open .vsel-menu{display:block}
   .vsel-opt{padding:8px 10px;border-radius:7px;font-size:13.5px;color:#334155;cursor:pointer;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .vsel-opt:hover{background:#f1f5f9}
   .vsel-opt.on{background:#eef2ff;color:#1e3a8a;font-weight:600}
   .vops .dlbtn{flex:0 0 auto;min-width:88px;display:flex;align-items:center;justify-content:center;
@@ -298,24 +304,34 @@
 
   // 自绘下拉。为什么不用原生 <select>：它的选项列表由系统渲染（Windows 上是蓝色高亮条），
   // CSS 改不了，和页面风格对不上。这里用 button + 绝对定位菜单，样式完全跟页面一致。
-  function buildVariantPicker(labels, startIdx, onPick){
+  function buildVariantPicker(items, startIdx, onPick){
     var box=document.createElement('div'); box.className='vsel';
     var btn=document.createElement('button'); btn.type='button'; btn.className='vsel-btn';
-    var lab=document.createElement('span'); lab.className='lab';
+    var lab=document.createElement('div'); lab.className='lab';
     var arw=document.createElement('span'); arw.className='arw'; arw.textContent='▾';
     btn.appendChild(lab); btn.appendChild(arw);
     var menu=document.createElement('div'); menu.className='vsel-menu';
     var cur=startIdx;
 
+    // 分列渲染：后端给的 parts = [类型, 分辨率, 体积, 水印]，列宽由 CSS 固定
+    function mkLine(it){
+      var d=document.createElement('div'); d.className='vline';
+      (it.parts && it.parts.length ? it.parts : [it.label]).forEach(function(t){
+        var s=document.createElement('span'); s.textContent=t; d.appendChild(s);
+      });
+      return d;
+    }
     function sync(){
-      lab.textContent=labels[cur];
-      btn.title=labels[cur];
+      lab.innerHTML='';
+      lab.appendChild(mkLine(items[cur]));
+      btn.title=items[cur].label;
       Array.prototype.forEach.call(menu.children, function(el,i){
         el.className='vsel-opt'+(i===cur?' on':'');
       });
     }
-    labels.forEach(function(text,i){
-      var o=document.createElement('div'); o.className='vsel-opt'; o.textContent=text; o.title=text;
+    items.forEach(function(it,i){
+      var o=document.createElement('div'); o.className='vsel-opt'; o.title=it.label;
+      o.appendChild(mkLine(it));
       o.onclick=function(ev){
         ev.stopPropagation();
         cur=i; sync(); box.classList.remove('open'); onPick(i);
@@ -380,7 +396,7 @@
 
       if(vs.length>1){
         ops.appendChild(buildVariantPicker(
-          vs.map(function(x){return x.label;}),
+          vs,
           vs.indexOf(cur),
           function(i){
             cur=vs[i]||null;
