@@ -8,14 +8,15 @@
      路径 note.noteDetailMap[noteId].note（老版本是 noteData.data.noteData）。
   3. 该 JSON 里常出现 JS 的 undefined（非法 JSON），要先换成 null。
   4. 图片：imageList[].urlDefault，去掉 `!` 之后的处理参数即为原图。
-  5. 视频：video.consumer.originVideoKey -> sns-video-bd.xhscdn.com/{key}；
-     兜底用 media.stream 里最高档的 masterUrl。
+  5. 视频：video.consumer.originVideoKey -> sns-video-bd.xhscdn.com/{key}（原画）；
+     media.stream 里还有 h264/h265 的转码档，体积小一个数量级，见 _video_variants。
 受限：匿名 SSR 拿不到作者/互动数（这些要登录），所以这两项可能为空；
-      视频匿名多为中码率，不是原画质；直链带签名，过期快，要立刻下载。
+      直链带签名，过期快，要立刻下载。
 """
+import json
 import re
 
-from .common import extract_json_after, extract_url, get
+from .common import extract_json_after, extract_url, get, head_size
 
 SHORT_HOSTS = ("xhslink.cn", "xhslink.com", "xhslink.net")
 NOTE_RE = re.compile(r"/(?:explore|discovery/item)/([0-9a-zA-Z]+)")
@@ -95,11 +96,21 @@ def _find_note(state, note_id):
 
 
 def _video_variants(note):
-    """返回 (preview_url, orig_url, codec)。
+    """返回 (preview_url, orig_url, codec, variants)。
 
-    预览必须优先 H.264：Chrome 不解 HEVC，而小红书不少视频的 originVideoKey
-    就是 H.265，表现为「时长读得到、宽高是 0、画面全黑」（2026-11-19 实测）。
-    原始档单独返回，供「下载原画」用——画质更高但可能只有 H.265。
+    `variants` 是给前端的档位列表，**只发布两个可下载项：原画 + H.265**；
+    `recommended` 给 H.265（该笔记没有 H.265 时退回原画）。
+
+    水印分布（2026-11-22 逐档实测，别搞反）：
+      * **原画** `originVideoKey`：1080×1440 / 222.3 MB / **无平台水印**
+      * **H.265 转码档**：720×960 / 20.0 MB / **无平台水印**（下载后播放确认；Chrome 解不了 HEVC，
+        无法抓帧复核，此条依据为实际下载验证）
+      * **H.264 转码档**：720×960 / 24.3 MB / **带平台水印**（第 30 秒那帧可见左上「小红书」+ 右上用户名），
+        **不作为可下载项**，只留作「浏览器不支持 HEVC 时的预览兜底」
+
+    判据教训：
+      1. 第一次只抓第 4 秒一帧就写「转码档不带水印」——错。水印开头几秒淡入，**必须多抓几个时间点**。
+      2. 第二次以为「所有转码档都带水印」——错。**同一视频的不同编码档水印策略可以不同，必须逐档验。**
     """
     video = note.get("video") or {}
     origin = ((video.get("consumer") or {}).get("originVideoKey") or "").strip()
@@ -107,22 +118,72 @@ def _video_variants(note):
 
     stream = ((video.get("media") or {}).get("stream") or {})
 
-    def best(codec):
-        url, score = "", -1
+    def pick(codec):
+        url, score, meta = "", -1, {}
         for item in (stream.get(codec) or []):
             u = item.get("masterUrl") or ((item.get("backupUrls") or [""])[0])
             if not u:
                 continue
             s = (item.get("width") or 0) * (item.get("height") or 0)
             if s > score:
-                url, score = u, s
-        return url
+                url, score, meta = u, s, item
+        return url, (meta or {})
 
-    h264, h265 = best("h264"), best("h265")
+    h264, m264 = pick("h264")
+    h265, m265 = pick("h265")
     preview = h264 or origin_url or h265
     orig = origin_url or h265 or h264
     codec = "h264" if h264 else (("h265" if (origin_url or h265) else ""))
-    return preview, orig, codec
+
+    # 原画分辨率只在 mediaV2.video 里（stream 的宽高是转码档的，别混用）；拿不到就留空，不猜
+    ow = oh = 0
+    try:
+        mv2 = video.get("mediaV2")
+        obj = json.loads(mv2) if isinstance(mv2, str) else (mv2 or {})
+        vv = (obj or {}).get("video") or {}
+        ow, oh = int(vv.get("width") or 0), int(vv.get("height") or 0)
+    except (ValueError, TypeError, AttributeError):
+        pass
+
+    variants, seen = [], set()
+
+    def add(vid, url, c, meta, w=0, h=0, rec=False, label="", size=0):
+        if not url or url in seen:
+            return
+        seen.add(url)
+        variants.append({
+            "id": vid, "url": url, "codec": c,
+            "width": int(w or (meta or {}).get("width") or 0),
+            "height": int(h or (meta or {}).get("height") or 0),
+            "size": int(size or (meta or {}).get("size") or 0),
+            "label": label, "recommended": rec,
+        })
+
+    if origin_url:
+        # 原画体积不在页面 JSON 里，现量一次（失败就不写体积）
+        osize = head_size(origin_url)
+        parts = ["原画"]
+        if ow and oh:
+            parts.append("%d×%d" % (ow, oh))
+        if osize:
+            parts.append("%.1f MB" % (osize / 1048576.0))
+        # 没有 H.265 时原画就是唯一选择，标成默认
+        add("orig", origin_url, "orig", {}, w=ow, h=oh, rec=not h265, size=osize,
+            label=" · ".join(parts) + "（无水印）")
+
+    # 只发布 H.265 作为转码档：体积只有原画的 1/11 且实测无水印；
+    # H.264 带平台水印，**不发布**，仅由前端在浏览器不支持 HEVC 时充当预览兜底。
+    add("hd-h265", h265, "h265", m265, rec=True)
+
+    for v in variants:
+        if v["label"]:
+            continue
+        res = ("%d×%d" % (v["width"], v["height"])) if (v["width"] and v["height"]) else ""
+        mb = ("%.1f MB" % (v["size"] / 1048576.0)) if v["size"] else ""
+        tag = "高清 H.265（无水印·体积小）"
+        v["label"] = " · ".join([x for x in (tag, res, mb) if x])
+
+    return preview, orig, codec, variants
 
 
 def _best_video(note):
@@ -163,9 +224,9 @@ def parse(share_text):
         if cands:
             images.append(cands[0])
 
-    video_url, video_url_orig, video_codec = "", "", ""
+    video_url, video_url_orig, video_codec, video_variants = "", "", "", []
     if (note.get("type") or "") == "video" or note.get("video"):
-        video_url, video_url_orig, video_codec = _video_variants(note)
+        video_url, video_url_orig, video_codec, video_variants = _video_variants(note)
 
     # 图文笔记里也可能混着 live photo（动图），先按普通图处理，不额外拉视频
     if not images and not video_url:
@@ -179,6 +240,7 @@ def parse(share_text):
         "video_url": video_url,
         "video_url_orig": video_url_orig,
         "video_codec": video_codec,
+        "variants": video_variants,
         "images": images,
         "cover": images[0] if images else "",
         "raw_id": note_id,

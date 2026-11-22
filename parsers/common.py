@@ -29,6 +29,25 @@ def extract_url(text):
     return m.group(0).rstrip("，。、；：") if m else None
 
 
+def head_size(url, referer="https://www.xiaohongshu.com/", timeout=3):
+    """HEAD 拿 Content-Length（字节）。
+
+    只给「原画」那一档量体积用：小红书的 stream 里只有转码档带 size，
+    原画的体积不在页面 JSON 里。失败一律返回 0，不抛异常——
+    体积是展示信息，不能因为它把整次解析拖垮（2026-11-22）。
+    超时压到 3 秒：这条在解析主路径上串行执行，批量粘 10 条时最坏是 10 次 HEAD。
+    """
+    if not url:
+        return 0
+    try:
+        r = requests.head(url, headers={"User-Agent": MOBILE_UA, "Referer": referer},
+                          timeout=timeout, allow_redirects=True)
+        cl = (r.headers.get("Content-Length") or "").strip()
+        return int(cl) if cl.isdigit() else 0
+    except Exception:
+        return 0
+
+
 def extract_urls(text):
     """抠出全部链接，按出现顺序去重。
 

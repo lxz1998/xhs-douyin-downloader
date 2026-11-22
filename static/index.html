@@ -106,6 +106,14 @@
   .hdel{color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:4px 7px;border:0;background:transparent;border-radius:6px}
   .hdel:hover{background:#f1f3f6;color:#b91c1c}
   .prog{color:var(--muted);font-size:13px;margin-top:10px;display:none}
+  .retry-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+  .retry-row:first-child{border-top:0}
+  .retry-link{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+  .retry-btn{padding:5px 10px;font-size:12px;flex:0 0 auto}
+  .img-fail{display:none;min-height:150px;aspect-ratio:3/4;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:12px;text-align:center;color:var(--muted);font-size:12px}
+  .img.failed .img-fail{display:flex}
+  .img.failed img{display:none}
+  .hist-error{display:none;margin:8px 0;padding:9px 10px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#b91c1c;font-size:13px}
 </style>
 </head>
 <body>
@@ -138,6 +146,7 @@
       <div class="title" style="font-size:15px;margin:0">最近解析</div>
       <button class="ghost" id="btnHistClear" title="清空全部历史">清空</button>
     </div>
+    <div class="hist-error" id="histError" role="status"></div>
     <div id="histList"></div>
   </div>
 
@@ -206,17 +215,49 @@
     try{
       for(var i=0;i<urls.length;i++){
         if(urls.length>1) prog('正在解析 '+(i+1)+' / '+urls.length+'…');
-        try{
-          var r=await fetch(withSC('/api/parse'),{method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({text:urls[i]})});
-          var d=await r.json();
-          if(d.ok){ $('results').appendChild(renderCard(d)); okN++; }
-          else bad.push((d.error||'解析失败')+'（'+urls[i].slice(0,36)+'）');
-        }catch(e){ bad.push('网络出错：'+e.message); }
+        var result=await parseOne(urls[i]);
+        if(result.ok){ $('results').appendChild(renderCard(result.data)); okN++; }
+        else bad.push({url:urls[i],error:result.error});
       }
     } finally { prog(''); busy(false); }
-    if(bad.length) showErr(bad.length+' 条没成功：'+bad.slice(0,3).join('；'));
+    if(bad.length) showRetryErrors(bad);
     if(okN) loadHistory();
+  }
+
+  async function parseOne(url){
+    try{
+      var r=await fetch(withSC('/api/parse'),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({text:url})});
+      var d=await r.json();
+      return d.ok?{ok:true,data:d}:{ok:false,error:d.error||'解析失败'};
+    }catch(e){ return {ok:false,error:'网络出错：'+e.message}; }
+  }
+
+  function showRetryErrors(items){
+    var box=document.createElement('div'); box.className='card';
+    var heading=document.createElement('div'); heading.className='title';
+    heading.textContent=items.length+' 条未成功'; box.appendChild(heading);
+    items.forEach(function(item){
+      var row=document.createElement('div'); row.className='retry-row';
+      var detail=document.createElement('span'); detail.className='retry-link';
+      detail.textContent=item.error+'（'+item.url+'）'; detail.title=item.url;
+      var btn=document.createElement('button'); btn.className='ghost retry-btn'; btn.textContent='重试';
+      btn.onclick=async function(){
+        btn.disabled=true; btn.textContent='重试中…';
+        var result=await parseOne(item.url);
+        if(result.ok){
+          $('results').insertBefore(renderCard(result.data),box);
+          row.remove();
+          if(!box.querySelector('.retry-row')) box.remove();
+          loadHistory();
+        }else{
+          item.error=result.error; detail.textContent=item.error+'（'+item.url+'）';
+          btn.disabled=false; btn.textContent='重试';
+        }
+      };
+      row.appendChild(detail); row.appendChild(btn); box.appendChild(row);
+    });
+    $('results').appendChild(box);
   }
 
   function dlUrl(u,name){
@@ -253,29 +294,54 @@
 
     if(d.kind==='video'&&d.video_url){
       var orig=d.video_url_orig||d.video_url;
-      var hasClean=orig!==d.video_url;              // 预览用的兼容档 vs 原始档，两份不同
-      // 兼容档是平台转码的，画面上带小红书水印；原始档是干净的，但常常是 H.265。
-      // 浏览器能解 HEVC 就直接用原始档预览，解不了才退回兼容档。
-      var useOrig=hasClean&&canPlayHevc();
+      var hasClean=orig!==d.video_url;              // 预览兜底档 vs 原始档，两份不同
+      // 2026-11-22 实测（两轮，别搞反）：原画**无**平台水印；H.265 转码档**也无**（下载确认）；
+      // **H.264 转码档带水印**（左上「小红书」+ 右上用户名）——它已从可下载档移除，
+      // 只在浏览器解不了 HEVC 时充当预览兜底。
+      var vs=(d.variants||[]).filter(function(x){return x&&x.url;});
+      var cur=vs.filter(function(x){return x.recommended;})[0]||vs[0]||null;
+      var h265v=vs.filter(function(x){return x.id==='hd-h265';})[0]||null;
+      var canHevc=canPlayHevc();
+      // 预览：能解 HEVC 就用 H.265（干净且只有 20MB 级）；解不了只能退带水印的 H.264
+      var previewSrc=(canHevc&&h265v)?h265v.url:(d.video_url||orig);
       var v=document.createElement('video');
       v.controls=true; v.preload='metadata';
-      v.src=dlUrl(useOrig?orig:d.video_url, '');    // 预览走 inline
+      v.src=dlUrl(previewSrc, '');                  // 预览走 inline
       card.appendChild(v);
+      var tip=document.createElement('div'); tip.className='meta';
+      tip.style.cssText='color:#b45309;margin:0 0 10px';   // 警示色：这里要说的是「预览和下载不一样」，灰色会被忽略
+      var tipOf=function(){
+        if(!cur) return hasClean?'预览是平台转码版，画面带平台水印；下载拿到的是干净的那份。':'';
+        if(cur.id==='orig') return '原画：无平台水印，1080p 级别，体积大。';
+        return canHevc
+          ? 'H.265 档（约 720p，默认）：无平台水印，体积约为原画的十分之一，预览和下载是同一份。要 1080p 请选原画。'
+          : 'H.265 档（约 720p，默认）：无平台水印、体积小。浏览器不支持 H.265 预览，上面预览用的是带水印的 H.264 转码版；下载的文件是干净的。要 1080p 请选原画。';
+      };
+      tip.textContent=tipOf();
+
       var a=document.createElement('a'); a.className='ghost';
       a.setAttribute('style','text-decoration:none;padding:11px 20px;border-radius:10px;display:inline-block');
-      a.href=dlUrl(orig, base+'.mp4');
-      a.textContent=hasClean?'下载无水印原画':'下载视频';
-      acts.appendChild(a);
-      var tipTxt='';
-      if(!hasClean&&d.video_codec==='h265'){
-        tipTxt='这条平台只给了 H.265 编码，浏览器可能放不出来。下载后用系统播放器打开即可。';
-      }else if(hasClean&&!useOrig){
-        tipTxt='预览用的是平台转码版，画面带水印；点「下载无水印原画」拿到的是干净的那份。';
+      a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
+      a.textContent=cur?('下载 · '+cur.label):(hasClean?'下载无水印原画':'下载视频');
+
+      if(vs.length>1){
+        var sel=document.createElement('select');
+        sel.setAttribute('style','margin-right:8px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;color:#111;font-size:14px;max-width:min(380px,100%)');
+        vs.forEach(function(x,i){
+          var o=document.createElement('option'); o.value=String(i); o.textContent=x.label;
+          sel.appendChild(o);
+        });
+        sel.value=String(vs.indexOf(cur));
+        sel.onchange=function(){
+          cur=vs[+sel.value]||null;
+          a.href=dlUrl(cur?cur.url:orig, base+'.mp4');
+          a.textContent=cur?('下载 · '+cur.label):'下载视频';
+          tip.textContent=tipOf();
+        };
+        acts.appendChild(sel);
       }
-      if(tipTxt){
-        var tip=document.createElement('div'); tip.className='meta';
-        tip.style.cssText='color:#b45309;margin:0 0 10px';
-        tip.textContent=tipTxt;
+      acts.appendChild(a);
+      if(tip.textContent){
         card.insertBefore(tip, v);        // 放在视频上方：视频太高，写在下面用户根本滚不到
       }
     }
@@ -291,13 +357,23 @@
       var box=document.createElement('div'); box.className='imgs';
       d.images.forEach(function(u,i){
         var cell=document.createElement('div'); cell.className='img';
-        var img=document.createElement('img'); img.loading='lazy'; img.src=dlUrl(u,'');
+        var img=document.createElement('img'); img.loading='lazy';
         img.style.cursor='zoom-in';
         img.onclick=function(){ lbOpen(d.images, i, base); };
-        img.onerror=function(){ img.style.opacity='.35'; };
+        var fail=document.createElement('div'); fail.className='img-fail';
+        var failText=document.createElement('span'); failText.textContent='图片加载失败';
+        var retry=document.createElement('button'); retry.className='ghost retry-btn'; retry.textContent='重试加载';
+        retry.onclick=function(){
+          cell.classList.remove('failed'); retry.disabled=true; retry.textContent='加载中…';
+          img.src=dlUrl(u,'')+(dlUrl(u,'').indexOf('?')>=0?'&':'?')+'_retry='+Date.now();
+        };
+        img.onload=function(){ cell.classList.remove('failed'); retry.disabled=false; retry.textContent='重试加载'; };
+        img.onerror=function(){ cell.classList.add('failed'); retry.disabled=false; retry.textContent='重试加载'; };
+        fail.appendChild(failText); fail.appendChild(retry);
+        img.src=dlUrl(u,'');
         var dl=document.createElement('a'); dl.className='dl'; dl.textContent='下载';
         dl.href=dlUrl(u, base+'_'+(i+1)+'.jpg');
-        cell.appendChild(img); cell.appendChild(dl); box.appendChild(cell);
+        cell.appendChild(img); cell.appendChild(fail); cell.appendChild(dl); box.appendChild(cell);
       });
       card.appendChild(box);
     }
@@ -306,11 +382,14 @@
 
   // 历史：解析成功后由后端自动记一条，这里只负责显示与重解析。
   async function loadHistory(){
+    var card=$('histCard'), list=$('histList'), err=$('histError');
     try{
       var r=await fetch(withSC('/api/history'));
+      if(!r.ok) throw new Error('HTTP '+r.status);
       var d=await r.json();
-      var items=(d&&d.items)||[];
-      var card=$('histCard'), list=$('histList');
+      if(!d||d.ok!==true) throw new Error(d&&d.error||'响应格式不正确');
+      var items=d.items||[];
+      err.style.display='none'; err.textContent='';
       if(!items.length){ card.style.display='none'; return; }
       card.style.display='block';
       list.innerHTML='';
@@ -336,7 +415,14 @@
         };
         list.appendChild(row);
       });
-    }catch(e){}
+    }catch(e){
+      card.style.display='block'; err.style.display='block';
+      err.textContent='历史记录加载失败：'+(e&&e.message||e);
+      list.innerHTML='';
+      var retry=document.createElement('button'); retry.className='ghost retry-btn'; retry.textContent='重试读取';
+      retry.onclick=function(){ retry.disabled=true; retry.textContent='读取中…'; loadHistory(); };
+      err.appendChild(document.createTextNode(' ')); err.appendChild(retry);
+    }
   }
 
   async function zipAll(d, base, btn){
