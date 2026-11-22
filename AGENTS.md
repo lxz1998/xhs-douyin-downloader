@@ -87,7 +87,13 @@ python selftest.py "<一条真实的小红书链接>"
 3. **换图标**：`python -m PyInstaller --onefile --icon=你的.ico ...`
 4. **做托盘 / 后台常驻**：不要。控制台窗口是用户唯一的「怎么退出」的线索。
 
-## 打包成 exe（发给不装 Python 的人）
+## 打包成 exe（**2026-11-22 起不再维护**）
+
+> **exe 这条线已废弃**，不要再为它花时间：本项目改为「clone 仓库 + 跑源码」分发。
+> 已有的 `WorkBuddy/2026-11-19-15-55-27/app-desktop/dist/小红书去水印.exe`（18.6 MB，11-19 打包）
+> 是旧版，**不含 11-22 的档位功能**，不要再拿它给同事。
+> 下面的命令仅作「你确实需要一个独立 exe」时的参考，**已不再随代码更新验证**；
+> 用它打包前先跑一次 `selftest.py`。
 
 ```bash
 python -m PyInstaller --onefile --name "去水印" --add-data "static;static" --console --clean -y app.py
