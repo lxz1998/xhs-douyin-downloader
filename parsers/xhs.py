@@ -203,6 +203,23 @@ def _best_video(note):
     return _video_variants(note)[0]
 
 
+def _load_cookie():
+    """读本机存的小红书登录 cookie（~/.workbuddy/secrets/xhs_cookie.json）。
+
+    2026-11-28 实测：无 cookie 时 SSR 页面只返回空壳（errorNoteData + noteData:{}），
+    带登录 cookie 后同一页面变成 114KB、含完整 noteDetailMap。
+    cookie 过期后症状和没带一样（空壳），所以解析失败先怀疑它。
+    """
+    try:
+        p = os.path.expanduser("~/.workbuddy/secrets/xhs_cookie.json")
+        if os.path.exists(p):
+            d = json.load(open(p, encoding="utf-8"))
+            return "; ".join("%s=%s" % (k, v) for k, v in d.items() if v)
+    except Exception:
+        pass
+    return ""
+
+
 def parse(share_text):
     url = extract_url(share_text)
     if not url:
@@ -216,7 +233,7 @@ def parse(share_text):
         raise ValueError("链接里没解析出笔记 ID（建议用 App 里的「分享 → 复制链接」）")
     note_id = m.group(1)
 
-    page = get(url, referer="https://www.xiaohongshu.com/")
+    page = get(url, referer="https://www.xiaohongshu.com/", cookie=_load_cookie())
     html = page.text or ""
     state = extract_json_after(html, "window.__INITIAL_STATE__")
     if not state:

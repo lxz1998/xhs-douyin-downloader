@@ -65,8 +65,12 @@ def extract_urls(text):
     return out
 
 
-def get(url, referer=None, retries=2, timeout=15, allow_redirects=True, stream=False):
-    """带重试的 GET。两个平台的 SSR 页偶尔 5xx，重试两次基本能过。"""
+def get(url, referer=None, retries=2, timeout=15, allow_redirects=True, stream=False, cookie=None):
+    """带重试的 GET。两个平台的 SSR 页偶尔 5xx，重试两次基本能过。
+
+    2026-11-28 加 cookie：小红书无登录态时 SSR 只吐空壳
+    （__INITIAL_STATE__ 里是 errorNoteData），带登录 cookie 才有完整 noteDetailMap。
+    """
     headers = {
         "User-Agent": MOBILE_UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -74,6 +78,8 @@ def get(url, referer=None, retries=2, timeout=15, allow_redirects=True, stream=F
     }
     if referer:
         headers["Referer"] = referer
+    if cookie:
+        headers["Cookie"] = cookie
     last = None
     for i in range(retries + 1):
         try:
