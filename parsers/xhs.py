@@ -45,30 +45,38 @@ def _clean_img(u):
     if not u:
         return ""
     u = u.split("!")[0]
-    u = u.replace("//sns-img-qc", "//sns-img-bd").replace("sjp", "sns-webpic-qc")
+    # 只替换域名段：参数里出现 sjp 这类子串不能动，否则签名会被改坏
+    m = re.match(r"(https?://)([^/]+)(.*)$", u, re.S)
+    if m:
+        host = m.group(2).replace("sns-img-qc", "sns-img-bd").replace("sjp", "sns-webpic-qc")
+        u = m.group(1) + host + m.group(3)
     return u
 
 
 def _img_urls(img):
     """返回一张图的候选地址（按优先级）。
 
-    2026-11 实测：带 !h5_1080jpg 的只有 225KB（1080 宽），
-    而 sns-img-bd/{fileId} 是 1.19MB 的真原图；ci.xiaohongshu.com 是 282KB 的转换版。
-    所以优先 sns-img-bd，失败再退 ci。
+    2026-11-28 改序：**先用 SSR 里带签名的 urlDefault**。
+    原逻辑是「有 fileId 就直接拼 sns-img-bd/{fid}」——那是 2026-11 的实测结论
+    （拼接版 1.19MB、h5 缩略 225KB），但这批笔记的 fileId 映射已经失效，
+    9 张图同时加载失败，而 urlDefault 是平台当场发的带签名地址，反而可靠。
+    fileId 拼接降为备选，仍保留（它是真原图，只是不一定还能取到）。
     """
-    fid = (img.get("fileId") or "").strip()
-    if fid:
-        return ["https://sns-img-bd.xhscdn.com/%s" % fid,
-                "https://ci.xiaohongshu.com/%s?imageView2/format/jpeg" % fid]
+    urls = []
     for key in ("urlDefault", "url", "urlPre"):
         u = _clean_img(img.get(key))
         if u:
-            return [u]
+            urls.append(u)
+            break
+    fid = (img.get("fileId") or "").strip()
+    if fid:
+        urls.append("https://sns-img-bd.xhscdn.com/%s" % fid)
+        urls.append("https://ci.xiaohongshu.com/%s?imageView2/format/jpeg" % fid)
     for info in (img.get("infoList") or []):
         u = _clean_img(info.get("url"))
-        if u:
-            return [u]
-    return []
+        if u and u not in urls:
+            urls.append(u)
+    return urls
 
 
 def _find_note(state, note_id):
