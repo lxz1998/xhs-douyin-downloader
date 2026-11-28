@@ -58,15 +58,20 @@ def _img_urls(img):
 
     2026-11-28 实测（带登录 cookie，同一条笔记）：
       sns-webpic-qc（urlDefault/urlPre，带不带 !nd_* 后缀）→ **403，已不可用**
-      sns-img-bd/{fileId}    → 200，1,185,963 字节（真原图）
-      ci.xiaohongshu.com/{fileId} → 200，524,615 字节（转换版）
-    所以仍以 fileId 拼接为主；urlDefault 只作最后的兜底（它现在多半是 403）。
+      sns-img-bd/{fileId}    → 200，但很可能是 **HEIC**（UHDR 笔记 2.1 MB），浏览器显示白块
+      sns-img-bd/{fileId}?imageView2/2/w/0/format/jpg → 200，1.4 MB，image/jpeg，尺寸不缩
+    所以主候选是「CDN 转档 jpg」，原图/urlDefault 只做兜底。
     """
     urls = []
     fid = (img.get("fileId") or "").strip()
     if fid:
+        # 2026-11-28 实测：UHDR 笔记（fileId 带 note_pre_post_uhdr/）的原图是 **HEIC**
+        # （Content-Type image/heic，2.1 MB），Chrome 和微信 webview 都不解码，页面白块。
+        # 让 CDN 现转 JPEG：同一张图 4,284×5,712、1.4 MB、image/jpeg，尺寸不缩。
+        urls.append("https://sns-img-bd.xhscdn.com/%s?imageView2/2/w/0/format/jpg" % fid)
+        urls.append("https://ci.xiaohongshu.com/%s?imageView2/2/w/0/format/jpg" % fid)
+        # 原图兜底（HEIC 时靠 app.sniff_ext 判扩展名）
         urls.append("https://sns-img-bd.xhscdn.com/%s" % fid)
-        urls.append("https://ci.xiaohongshu.com/%s?imageView2/format/jpeg" % fid)
     for key in ("urlDefault", "url", "urlPre"):
         u = _clean_img(img.get(key))
         if u and u not in urls:
@@ -235,6 +240,13 @@ def parse(share_text):
 
     page = get(url, referer="https://www.xiaohongshu.com/", cookie=_load_cookie())
     html = page.text or ""
+
+    # 缺 xsec_token 时平台不发正文，而是把请求甩到 /404/sec_xxx 风控页（数据是空壳）。
+    # 这个症状最容易误判成「私密/已删除」，所以单独报（2026-11-28 实测）。
+    if "/404/sec_" in (page.url or "") or "xhs_sec_server" in (page.url or ""):
+        raise ValueError("这条链接缺 xsec_token，被平台当风控请求拦了；"
+                         "请在 App 里用「分享 → 复制链接」重新复制")
+
     state = extract_json_after(html, "window.__INITIAL_STATE__")
     if not state:
         raise ValueError("页面里没找到笔记数据（可能需要带 xsec_token 的分享链接）")

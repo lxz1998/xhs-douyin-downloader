@@ -206,10 +206,15 @@
 (function(){
   var $=function(id){return document.getElementById(id)};
   // 云端发布时，平台要求每个请求都带 sharecode（本地跑没有这个参数）
+  // 网页可能在云上（https://...:8444），解析跑在每台电脑本地（127.0.0.1:8090）。
+  // 本地打开时保持相对路径；否则打本地服务。
+  var API_BASE = (location.hostname==='127.0.0.1' || location.hostname==='localhost')
+    ? '' : 'http://127.0.0.1:8090';
   function withSC(path){
+    var full = API_BASE + path;
     var sc=new URLSearchParams(location.search).get('sharecode');
-    if(!sc) return path;
-    return path+(path.indexOf('?')>=0?'&':'?')+'sharecode='+encodeURIComponent(sc);
+    if(!sc) return full;
+    return full+(full.indexOf('?')>=0?'&':'?')+'sharecode='+encodeURIComponent(sc);
   }
 
   function showErr(msg){ var e=$('err'); e.textContent=msg; e.style.display='block'; }

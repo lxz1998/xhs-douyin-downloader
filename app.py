@@ -259,7 +259,11 @@ def requests_get_stream(url, timeout=40, extra_headers=None):
 
 def sniff_ext(data, ctype=""):
     """先看文件头再信 Content-Type：小红书的原图 CDN 返回 application/octet-stream，
-    只按头信息判断会把 6 张 jpg 全存成 .bin。"""
+    只按头信息判断会把 6 张 jpg 全存成 .bin。
+
+    HEIC 也带 ftyp，且位置和 mp4 一样（4:8）——必须先看品牌再判 mp4，
+    否则 UHDR 原图会存成 .mp4（2026-11-28 实测：brand 是 heic）。
+    """
     head = data[:12] if data else b""
     if head[:3] == b"\xff\xd8\xff":
         return ".jpg"
@@ -270,6 +274,11 @@ def sniff_ext(data, ctype=""):
     if head[:6] in (b"GIF87a", b"GIF89a"):
         return ".gif"
     if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"):
+            return ".heic"
+        if brand in (b"avif", b"avis"):
+            return ".avif"
         return ".mp4"
     return guess_ext(ctype)
 
@@ -282,6 +291,27 @@ def guess_ext(ctype):
         if key in ctype:
             return ext
     return ".bin"
+
+
+# ---- 跨域：网页在云端，解析在本机（127.0.0.1:8090）----
+# 两个必须都满足，否则 Chromium 会拦：
+# 1) 常规 CORS 预检；
+# 2) Private Network Access：公网页面访问本地要返回 Allow-Private-Network。
+@app.before_request
+def _preflight():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+
+@app.after_request
+def _cors(resp):
+    origin = request.headers.get("Origin", "")
+    resp.headers["Access-Control-Allow-Origin"] = origin or "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    resp.headers["Vary"] = "Origin"
+    return resp
 
 
 @app.get("/api/diag")
