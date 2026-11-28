@@ -10,10 +10,13 @@
   4. 图片：imageList[].urlDefault，去掉 `!` 之后的处理参数即为原图。
   5. 视频：video.consumer.originVideoKey -> sns-video-bd.xhscdn.com/{key}（原画）；
      media.stream 里还有 h264/h265 的转码档，体积小一个数量级，见 _video_variants。
-受限：匿名 SSR 拿不到作者/互动数（这些要登录），所以这两项可能为空；
+登录态是可选项：2026-11-28 复测，带 xsec_token 的链接匿名就能拿到标题、作者和全部图片；
+      没有 cookie 一样能解析，只是互动数之类要登录的字段可能为空。cookie 由使用者自己放在
+      <WM_DATA_DIR 或 ~/.watermark>/xhs_cookie.json，不随程序分发。
       直链带签名，过期快，要立刻下载。
 """
 import json
+import os
 import re
 
 from .common import extract_json_after, extract_url, get, head_size
@@ -209,17 +212,31 @@ def _best_video(note):
 
 
 def _load_cookie():
-    """读本机存的小红书登录 cookie（~/.workbuddy/secrets/xhs_cookie.json）。
+    """可选：读**使用者自己**存的小红书 cookie。默认没有也能用。
 
-    2026-11-28 实测：无 cookie 时 SSR 页面只返回空壳（errorNoteData + noteData:{}），
-    带登录 cookie 后同一页面变成 114KB、含完整 noteDetailMap。
-    cookie 过期后症状和没带一样（空壳），所以解析失败先怀疑它。
+    2026-11-28 复测更正：cookie 不是必需的。带 xsec_token 的分享链接，
+    匿名请求 SSR 同样返回完整 noteData（9 图 + 作者，101 KB）；带 cookie 只多 2 KB。
+    上午「无 cookie 只吐空壳」是缺 token 的症状，记错了对象。
+
+    查找顺序（都指向本机用户目录，不写死任何人的私有路径）：
+      1. 环境变量 WM_XHS_COOKIE —— 整串 cookie，方便脚本用
+      2. <WM_DATA_DIR 或 ~/.watermark>/xhs_cookie.json —— 与 history.json 同一层，
+         exe 发出去各用各的：谁的机器谁的 cookie，不随包分发
     """
     try:
-        p = os.path.expanduser("~/.workbuddy/secrets/xhs_cookie.json")
+        s = (os.environ.get("WM_XHS_COOKIE") or "").strip()
+        if s:
+            return s
+        d0 = os.environ.get("WM_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".watermark")
+        p = os.path.join(d0, "xhs_cookie.json")
         if os.path.exists(p):
             d = json.load(open(p, encoding="utf-8"))
-            return "; ".join("%s=%s" % (k, v) for k, v in d.items() if v)
+            if isinstance(d, str):
+                return d.strip()
+            if isinstance(d.get("cookie"), str):
+                return d["cookie"].strip()
+            return "; ".join("%s=%s" % (k, v) for k, v in d.items()
+                             if v and not str(k).startswith("_"))
     except Exception:
         pass
     return ""

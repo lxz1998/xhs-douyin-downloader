@@ -22,3 +22,6 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 登录 cookie 只放用户目录，绝不进仓库
+xhs_cookie.json
