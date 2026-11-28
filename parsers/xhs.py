@@ -56,22 +56,21 @@ def _clean_img(u):
 def _img_urls(img):
     """返回一张图的候选地址（按优先级）。
 
-    2026-11-28 改序：**先用 SSR 里带签名的 urlDefault**。
-    原逻辑是「有 fileId 就直接拼 sns-img-bd/{fid}」——那是 2026-11 的实测结论
-    （拼接版 1.19MB、h5 缩略 225KB），但这批笔记的 fileId 映射已经失效，
-    9 张图同时加载失败，而 urlDefault 是平台当场发的带签名地址，反而可靠。
-    fileId 拼接降为备选，仍保留（它是真原图，只是不一定还能取到）。
+    2026-11-28 实测（带登录 cookie，同一条笔记）：
+      sns-webpic-qc（urlDefault/urlPre，带不带 !nd_* 后缀）→ **403，已不可用**
+      sns-img-bd/{fileId}    → 200，1,185,963 字节（真原图）
+      ci.xiaohongshu.com/{fileId} → 200，524,615 字节（转换版）
+    所以仍以 fileId 拼接为主；urlDefault 只作最后的兜底（它现在多半是 403）。
     """
     urls = []
-    for key in ("urlDefault", "url", "urlPre"):
-        u = _clean_img(img.get(key))
-        if u:
-            urls.append(u)
-            break
     fid = (img.get("fileId") or "").strip()
     if fid:
         urls.append("https://sns-img-bd.xhscdn.com/%s" % fid)
         urls.append("https://ci.xiaohongshu.com/%s?imageView2/format/jpeg" % fid)
+    for key in ("urlDefault", "url", "urlPre"):
+        u = _clean_img(img.get(key))
+        if u and u not in urls:
+            urls.append(u)
     for info in (img.get("infoList") or []):
         u = _clean_img(info.get("url"))
         if u and u not in urls:

@@ -106,6 +106,15 @@ def extract_json_after(html, marker):
     if j < 0:
         return None
     text = re.sub(r"(?<=[:,\[])\s*undefined(?=[,}\]])", "null", html[j:])
+    # 2026-11-28：小红书 SSR 里混着 JS 构造器（如 "noteDetailMap":new Map([])），
+    # 不是合法 JSON，raw_decode 会在那里直接抛错、整段解析失败。
+    # 实测这条导致「页面有数据但解析器返回 None」，进一步表现为「所有图都加载失败」。
+    text = re.sub(r"\bnew Map\(\s*\[\s*\]\s*\)", "{}", text)
+    text = re.sub(r"\bnew Map\([^()]*\)", "{}", text)
+    text = re.sub(r"\bnew Set\(\s*\[\s*\]\s*\)", "[]", text)
+    text = re.sub(r"\bnew Set\([^()]*\)", "[]", text)
+    text = re.sub(r"(?<=[:,\[])\s*NaN(?=[,}\]])", "null", text)
+    text = re.sub(r"(?<=[:,\[])\s*-?Infinity(?=[,}\]])", "null", text)
     try:
         obj, _ = json.JSONDecoder().raw_decode(text)
         return obj
